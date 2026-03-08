@@ -1,13 +1,23 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <vector>
+#include <algorithm>   // for stable_sort
+#include <unordered_map>
+#include <set>
 using namespace std;
 
 #define row 13
 #define column 47
 
 
-#define BASIC {0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36}
+// #define BASIC {0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36}
+#define BASIC {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46}
+
+
+#define SIMPLE {0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46}
+
+
 
 // Special
 #define SPECIAL {38,40,42,44,46}
@@ -261,10 +271,6 @@ public:
     }
 
 
-
-
-
-
     void printValuesOnly() {
         int rows[] = BASIC;
         int rowCount = sizeof(rows)/sizeof(rows[0]);
@@ -299,74 +305,203 @@ public:
     }
 
 
+
+    // void printValuesOnly_SIMPLE() {
+    //     int rows[] = SIMPLE;
+    //     int rowCount = sizeof(rows)/sizeof(rows[0]);
+
+    //     int maxWidth = 0;
+
+    //     for (int i = 0; i < rowCount; i++) {
+    //         int r = rows[i];
+    //         for (int c = 0; c < 13; c++) {
+    //             string content;
+    //             if (table[r][c].key[0] != '\0')
+    //                 content = table[r][c].val;
+
+    //             int w = displayWidth(content);
+    //             if (w > maxWidth) maxWidth = w;
+    //         }
+    //     }
+
+    //     const int colWidth = maxWidth + 3;
+
+    //     for (int i = 0; i < rowCount; i++) {
+    //         int r = rows[i];
+    //         for (int c = 0; c < 13; c++) {
+    //             string content;
+    //             if (table[r][c].key[0] != '\0')
+    //                 content = table[r][c].val;
+
+    //             printCell(content, colWidth);
+    //         }
+    //         cout << endl;
+    //     }
+    // }
+
+
+
+    //BUG fix me
+    void printFileValuesGrid(const string& filename) {
+        ifstream in(filename);
+        if (!in) {
+            cerr << "Error: Cannot open file " << filename << endl;
+            return;
+        }
+
+        // ---- Prepare the list of all Tamil values (from the BASIC rows) ----
+        vector<string> allValues;
+        int rows[] = BASIC;
+        int rowCount = sizeof(rows)/sizeof(rows[0]);
+        for (int i = 0; i < rowCount; i++) {
+            int r = rows[i];
+            for (int c = 0; c < 13; c++) {
+                if (table[r][c].key[0] != '\0') {
+                    allValues.push_back(table[r][c].val);
+                }
+            }
+        }
+        // Sort values by length descending (longest first) for correct tokenization
+        sort(allValues.begin(), allValues.end(),
+             [](const string& a, const string& b) {
+                 return a.length() > b.length();
+             });
+
+        vector<vector<string>> lines;   // tokens for each input line
+        string line;
+        int maxTokens = 0;
+        int globalMaxWidth = 0;
+
+        // ---- Process each line ----
+        while (getline(in, line)) {
+            // Encode the line to Tamil
+            string encoded = encodeString(line);
+
+            // Tokenize the encoded string into individual Tamil syllables
+            vector<string> tokens;
+            size_t pos = 0;
+            while (pos < encoded.length()) {
+                bool found = false;
+                for (const string& val : allValues) {
+                    if (encoded.compare(pos, val.length(), val) == 0) {
+                        tokens.push_back(val);
+                        pos += val.length();
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    // Should not happen if encoding is correct, but fallback: take one character
+                    tokens.push_back(encoded.substr(pos, 1));
+                    pos++;
+                }
+            }
+
+            lines.push_back(tokens);
+            if (tokens.size() > maxTokens) maxTokens = tokens.size();
+
+            // Update the maximum display width among all tokens
+            for (const string& t : tokens) {
+                int w = displayWidth(t);
+                if (w > globalMaxWidth) globalMaxWidth = w;
+            }
+        }
+
+        // ---- Print the grid ----
+        const int colWidth = globalMaxWidth + 3;   // uniform cell width
+        for (const auto& tokens : lines) {
+            for (int i = 0; i < maxTokens; i++) {
+                if (i < (int)tokens.size()) {
+                    printCell(tokens[i], colWidth);
+                } else {
+                    printCell("", colWidth);   // empty cell
+                }
+            }
+            cout << endl;
+        }
+    }
+
+
+
+
+    // Encode: replace Roman keys with Tamil values, longest key first
     string encodeString(const string& input)
     {
         string out = input;
-
+        vector<pair<string, string>> mappings;
         int rows[] = BASIC;
         int rowCount = sizeof(rows)/sizeof(rows[0]);
 
-        for (int i = 0; i < rowCount; i++)
-        {
+        // Collect all non‑empty key‑value pairs from the selected rows
+        for (int i = 0; i < rowCount; i++) {
             int r = rows[i];
-
-            for (int c = 0; c < 13; c++)
-            {
-                if (table[r][c].key[0] == '\0') continue;
-
-                string k = table[r][c].key;
-                string v = table[r][c].val;
-
-                size_t pos = 0;
-                while ((pos = out.find(k, pos)) != string::npos)
-                {
-                    out.replace(pos, k.length(), v);
-                    pos += v.length();
+            for (int c = 0; c < 13; c++) {
+                if (table[r][c].key[0] != '\0') {
+                    mappings.emplace_back(table[r][c].key, table[r][c].val);
                 }
             }
         }
 
+        // Sort by key length descending; preserve original order for equal lengths
+        stable_sort(mappings.begin(), mappings.end(),
+            [](const pair<string,string>& a, const pair<string,string>& b) {
+                return a.first.length() > b.first.length();
+            });
+
+        // Perform replacement
+        for (const auto& p : mappings) {
+            const string& k = p.first;
+            const string& v = p.second;
+            size_t pos = 0;
+            while ((pos = out.find(k, pos)) != string::npos) {
+                out.replace(pos, k.length(), v);
+                pos += v.length();   // continue after the inserted Tamil text
+            }
+        }
         return out;
     }
 
+    // Decode: replace Tamil values with Roman keys, longest value first
     string decodeString(const string& input)
     {
         string out = input;
-
+        vector<pair<string, string>> mappings;
         int rows[] = BASIC;
         int rowCount = sizeof(rows)/sizeof(rows[0]);
 
-        for (int i = 0; i < rowCount; i++)
-        {
+        for (int i = 0; i < rowCount; i++) {
             int r = rows[i];
-
-            for (int c = 0; c < 13; c++)
-            {
-                if (table[r][c].key[0] == '\0') continue;
-
-                string k = table[r][c].key;
-                string v = table[r][c].val;
-
-                size_t pos = 0;
-                while ((pos = out.find(v, pos)) != string::npos)
-                {
-                    out.replace(pos, v.length(), k);
-                    pos += k.length();
+            for (int c = 0; c < 13; c++) {
+                if (table[r][c].key[0] != '\0') {
+                    mappings.emplace_back(table[r][c].key, table[r][c].val);
                 }
             }
         }
 
+        // Sort by value length descending; stable for equal lengths
+        stable_sort(mappings.begin(), mappings.end(),
+            [](const pair<string,string>& a, const pair<string,string>& b) {
+                return a.second.length() > b.second.length();
+            });
+
+        for (const auto& p : mappings) {
+            const string& k = p.first;
+            const string& v = p.second;
+            size_t pos = 0;
+            while ((pos = out.find(v, pos)) != string::npos) {
+                out.replace(pos, v.length(), k);
+                pos += k.length();   // continue after the inserted Roman text
+            }
+        }
         return out;
     }
 
-
+    // Process file: unchanged, but now uses the corrected encode/decode
     void processFile(const string& filename, bool encode)
     {
         ifstream in(filename);
         string line;
-
-        while (getline(in, line))
-        {
+        while (getline(in, line)) {
             if (encode)
                 cout << encodeString(line) << endl;
             else
@@ -374,7 +509,186 @@ public:
         }
     }
 
+
+// v2
+    void printFileGridV2(const string& filename) {
+        ifstream in(filename);
+        if (!in) {
+            cerr << "Error: Cannot open file " << filename << endl;
+            return;
+        }
+
+        // ---- Build list of primary rows (even indices) ----
+        vector<int> displayRows;
+        for (int r = 0; r < column; r += 2) {
+            displayRows.push_back(r);
+        }
+
+        // ---- Build map from Tamil value to (row, col) and collect all values ----
+        unordered_map<string, pair<int, int>> valueToRC;
+        vector<string> allValues;
+        int globalMaxWidth = 0;
+
+        for (int r : displayRows) {
+            for (int c = 0; c < 13; c++) {
+                if (table[r][c].key[0] != '\0') {
+                    string val = table[r][c].val;
+                    valueToRC[val] = {r, c};
+                    allValues.push_back(val);
+                    int w = displayWidth(val);
+                    if (w > globalMaxWidth) globalMaxWidth = w;
+                }
+            }
+        }
+
+        // Sort allValues by length descending for tokenization
+        sort(allValues.begin(), allValues.end(),
+             [](const string& a, const string& b) {
+                 return a.length() > b.length();
+             });
+
+        const int colWidth = globalMaxWidth + 3;  // uniform cell width
+
+        string line;
+        while (getline(in, line)) {
+            // Tokenize the line into Tamil syllables (longest match)
+            vector<string> tokens;
+            size_t pos = 0;
+            while (pos < line.length()) {
+                bool found = false;
+                for (const string& val : allValues) {
+                    if (line.compare(pos, val.length(), val) == 0) {
+                        tokens.push_back(val);
+                        pos += val.length();
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    // Skip invalid character (should not happen with proper Tamil text)
+                    pos++;
+                }
+            }
+
+            // Build set of (row, col) that appear in this line
+            set<pair<int, int>> present;
+            for (const string& t : tokens) {
+                auto it = valueToRC.find(t);
+                if (it != valueToRC.end()) {
+                    present.insert(it->second);
+                }
+            }
+
+            // Print the grid for this line
+            for (int r : displayRows) {
+                for (int c = 0; c < 13; c++) {
+                    string content;
+                    if (present.count({r, c})) {
+                        content = table[r][c].val;
+                    }
+                    printCell(content, colWidth);
+                }
+                cout << endl;
+            }
+            cout << endl;  // blank line between words
+        }
+    }
+
+
+
+    void printFileGrid(const string& filename) {
+        ifstream in(filename);
+        if (!in) {
+            cerr << "Error: Cannot open file " << filename << endl;
+            return;
+        }
+
+        // ---- Build list of primary rows (even indices) ----
+        vector<int> displayRows;
+        for (int r = 0; r < column; r += 2) {
+            displayRows.push_back(r);
+        }
+
+        // ---- Build map from Tamil value to (row, col) and collect all values ----
+        unordered_map<string, pair<int, int>> valueToRC;
+        vector<string> allValues;
+        int globalMaxWidth = 0;
+
+        for (int r : displayRows) {
+            for (int c = 0; c < 13; c++) {
+                if (table[r][c].key[0] != '\0') {
+                    string val = table[r][c].val;
+                    valueToRC[val] = {r, c};
+                    allValues.push_back(val);
+                    int w = displayWidth(val);
+                    if (w > globalMaxWidth) globalMaxWidth = w;
+                }
+            }
+        }
+
+        // Sort allValues by length descending for tokenization
+        sort(allValues.begin(), allValues.end(),
+             [](const string& a, const string& b) {
+                 return a.length() > b.length();
+             });
+
+        const int colWidth = globalMaxWidth + 3;  // uniform cell width
+
+        string line;
+        int lineNum = 1;
+        while (getline(in, line)) {
+            // Print start separator
+            cout << "################### LINE " << lineNum << " START ##################" << endl;
+
+            // Tokenize the line into Tamil syllables (longest match)
+            vector<string> tokens;
+            size_t pos = 0;
+            while (pos < line.length()) {
+                bool found = false;
+                for (const string& val : allValues) {
+                    if (line.compare(pos, val.length(), val) == 0) {
+                        tokens.push_back(val);
+                        pos += val.length();
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    // Skip invalid character (should not happen with proper Tamil text)
+                    pos++;
+                }
+            }
+
+            // Build set of (row, col) that appear in this line
+            set<pair<int, int>> present;
+            for (const string& t : tokens) {
+                auto it = valueToRC.find(t);
+                if (it != valueToRC.end()) {
+                    present.insert(it->second);
+                }
+            }
+
+            // Print the grid for this line
+            for (int r : displayRows) {
+                for (int c = 0; c < 13; c++) {
+                    string content;
+                    if (present.count({r, c})) {
+                        content = table[r][c].val;
+                    }
+                    printCell(content, colWidth);
+                }
+                cout << endl;
+            }
+
+            // Print end separator
+            cout << "################### LINE " << lineNum << " END ##################" << endl << endl;
+
+            lineNum++;
+        }
+    }
+
 };
+
 
 int main() {
     Tamil t;
@@ -384,15 +698,23 @@ int main() {
     // t.printKeysOnly();
     // t.printValuesOnly();
 
-    t.printSelectedRows_S();
+    // t.printValuesOnly_SIMPLE();
 
 
-    cout << t.encodeString("a aa A") << endl;
-    cout << t.decodeString("சபரி") << endl;
+    // t.printSelectedRows_S();
+
+
+    // cout << t.encodeString("a aa A") << endl;
+    // cout << t.decodeString("சபரி") << endl;
 
     // file processing
     // t.processFile("input.txt", true);   // encode
     // t.processFile("input.txt", false);  // decode
+
+    //bug
+    // t.printFileValuesGrid("input.txt");
+    t.printFileGrid("input.txt");
+    
 
     return 0;
 }
